@@ -57,17 +57,17 @@ function AdminPanel() {
     const removeCounter = useQueueStore((state) => state.removeCounter);
     const setActiveCounter = useQueueStore((state) => state.setActiveCounter);
 
-    // Auto poll queue state from server every 2 seconds
+    // Auto poll queue state from server every 3 seconds
     useEffect(() => {
         fetchQueueState();
         const syncInterval = setInterval(() => {
             fetchQueueState();
-        }, 2000);
+        }, 3000);
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
 
     const handleNextQueue = () => {
-        nextQueue();
+        nextQueue(selectedCounter);
     };
 
     const toggleSelectTicket = (id) => {
@@ -86,7 +86,7 @@ function AdminPanel() {
 
     const handleCallBatch = () => {
         if (selectedTicketIds.length > 0) {
-            callBatchTickets(selectedTicketIds);
+            callBatchTickets(selectedTicketIds, selectedCounter);
             setSelectedTicketIds([]);
         }
     };

@@ -20,11 +20,25 @@ import {
 } from 'react-icons/fa';
 import useQueueStore from '../store/queueStore';
 
+let audioCtxSingleton = null;
+
+function getAudioContext() {
+    if (!audioCtxSingleton) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+            audioCtxSingleton = new AudioCtx();
+        }
+    }
+    if (audioCtxSingleton && audioCtxSingleton.state === 'suspended') {
+        audioCtxSingleton.resume().catch(() => {});
+    }
+    return audioCtxSingleton;
+}
+
 function playChime() {
     try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
+        const ctx = getAudioContext();
+        if (!ctx) return;
         const now = ctx.currentTime;
 
         const osc1 = ctx.createOscillator();
@@ -53,40 +67,38 @@ function playChime() {
     }
 }
 
-function announceVoice(ticketInput, counterName) {
-    if ('speechSynthesis' in window) {
-        try {
-            window.speechSynthesis.cancel();
-            let text = '';
-            if (Array.isArray(ticketInput) && ticketInput.length > 0) {
-                const formatted = ticketInput.map(t => String(t).replace('-', ' '));
-                let ticketListStr = '';
-                if (formatted.length === 1) {
-                    ticketListStr = formatted[0];
-                } else if (formatted.length === 2) {
-                    ticketListStr = `${formatted[0]} and ${formatted[1]}`;
-                } else {
-                    const last = formatted.pop();
-                    ticketListStr = `${formatted.join(', ')}, and ${last}`;
-                }
-                const label = ticketInput.length > 1 ? 'numbers' : 'number';
-                text = `Attention please. Ticket ${label} ${ticketListStr}, please proceed to ${counterName || 'assistance counter'}.`;
-            } else {
-                const formattedTicket = String(ticketInput).replace('-', ' ');
-                text = `Attention please. Ticket number ${formattedTicket}, please proceed to ${counterName || 'assistance counter'}.`;
-            }
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 0.88;
-            utterance.pitch = 1.0;
-            window.speechSynthesis.speak(utterance);
-        } catch (err) {
-            console.warn('Speech synthesis error:', err);
-        }
-    }
+function DigitalClock() {
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const formattedDate = currentTime.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    });
+
+    const formattedTime = currentTime.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+
+    return (
+        <div className="text-right">
+            <p className="text-amber-300 font-mono font-black text-2xl tracking-widest">{formattedTime}</p>
+            <p className="text-blue-200 text-xs font-medium">{formattedDate}</p>
+        </div>
+    );
 }
 
 function QueueDisplay() {
-    const [currentTime, setCurrentTime] = useState(new Date());
     const [activeCenterTab, setActiveCenterTab] = useState('video'); // 'video' | 'org' | 'charter'
     const [isPlaying, setIsPlaying] = useState(true);
 
@@ -110,22 +122,16 @@ function QueueDisplay() {
     // Queue mechanism to handle voice announcements sequentially without overlapping calls
     const callQueueRef = useRef([]);
     const isSpeakingRef = useRef(false);
+    const activeUtteranceRef = useRef(null);
 
-    // Auto poll queue state from server every 2 seconds
+    // Auto poll queue state from server every 3 seconds
     useEffect(() => {
         fetchQueueState();
         const syncInterval = setInterval(() => {
             fetchQueueState();
-        }, 2000);
+        }, 3000);
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setCurrentTime(new Date());
-        }, 1000);
-        return () => clearInterval(timer);
-    }, []);
 
 
 
@@ -182,11 +188,13 @@ function QueueDisplay() {
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.rate = 0.88;
                 utterance.pitch = 1.0;
+                activeUtteranceRef.current = utterance;
 
                 let hasEnded = false;
                 const finish = () => {
                     if (hasEnded) return;
                     hasEnded = true;
+                    activeUtteranceRef.current = null;
                     isSpeakingRef.current = false;
                     // Brief pause before calling next queued announcement
                     setTimeout(() => {
@@ -206,6 +214,7 @@ function QueueDisplay() {
 
             } catch (err) {
                 console.warn('Speech synthesis error:', err);
+                activeUtteranceRef.current = null;
                 isSpeakingRef.current = false;
                 processCallQueue();
             }
@@ -280,19 +289,6 @@ function QueueDisplay() {
         }
     }, [lastCalledTrigger, servingQueues, soundEnabled, voiceEnabled]);
 
-    const formattedDate = currentTime.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-    });
-
-    const formattedTime = currentTime.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    });
-
     const announcements = [
         "Welcome to the Office of the Provincial Procurement Management Officer - Please have your accreditation and division documents ready",
         "Citizen's Charter Guarantee: Standard processing time is within 15 minutes",
@@ -324,10 +320,7 @@ function QueueDisplay() {
                     </div>
 
                     <div className="flex items-center gap-6">
-                        <div className="text-right">
-                            <p className="text-amber-300 font-mono font-black text-2xl tracking-widest">{formattedTime}</p>
-                            <p className="text-blue-200 text-xs font-medium">{formattedDate}</p>
-                        </div>
+                        <DigitalClock />
 
                         <button
                             onClick={toggleSound}

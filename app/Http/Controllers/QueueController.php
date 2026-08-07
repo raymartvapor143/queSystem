@@ -72,12 +72,7 @@ class QueueController extends Controller
         $totalServed = Ticket::where('status', 'completed')->count();
         $totalSkipped = Ticket::where('status', 'skipped')->count();
 
-        $avgWaitTime = DB::table('tickets')
-            ->where('status', 'completed')
-            ->whereNotNull('served_at')
-            ->whereNotNull('created_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, served_at)) as avg_time')
-            ->value('avg_time') ?? 0;
+        $avgWaitTime = $this->getAverageWaitTime();
 
         $data = [
             'queue' => $pendingTickets,
@@ -94,7 +89,7 @@ class QueueController extends Controller
             'statistics' => [
                 'totalServed' => $totalServed,
                 'totalSkipped' => $totalSkipped,
-                'averageWaitTime' => round((float)$avgWaitTime, 2),
+                'averageWaitTime' => $avgWaitTime,
             ],
         ];
 
@@ -120,8 +115,38 @@ class QueueController extends Controller
         return response()->json(['ticket' => $this->formatTicket($ticket)]);
     }
 
-    private function getCounterForCategory(?string $catId, ?int $fallbackCounterId = null): Counter
+    private function getAverageWaitTime(): float
     {
+        try {
+            $driver = DB::connection()->getDriverName();
+            if ($driver === 'sqlite') {
+                $avg = DB::table('tickets')
+                    ->where('status', 'completed')
+                    ->whereNotNull('served_at')
+                    ->whereNotNull('created_at')
+                    ->selectRaw('AVG(strftime("%s", served_at) - strftime("%s", created_at)) as avg_time')
+                    ->value('avg_time');
+            } else {
+                $avg = DB::table('tickets')
+                    ->where('status', 'completed')
+                    ->whereNotNull('served_at')
+                    ->whereNotNull('created_at')
+                    ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, served_at)) as avg_time')
+                    ->value('avg_time');
+            }
+            return round((float)($avg ?? 0), 2);
+        } catch (\Throwable $e) {
+            return 0.0;
+        }
+    }
+
+    private function getCounterForCategory(?string $catId, ?int $requestedCounterId = null): Counter
+    {
+        if ($requestedCounterId) {
+            $counter = Counter::find($requestedCounterId);
+            if ($counter) return $counter;
+        }
+
         if ($catId) {
             $map = [
                 'CON' => 'Contracting',
@@ -134,11 +159,6 @@ class QueueController extends Controller
             if ($counter) {
                 return $counter;
             }
-        }
-
-        if ($fallbackCounterId) {
-            $counter = Counter::find($fallbackCounterId);
-            if ($counter) return $counter;
         }
 
         return Counter::first() ?? Counter::create(['name' => 'General Counter', 'staff' => 'Officer']);
@@ -310,6 +330,11 @@ class QueueController extends Controller
     public function reset(Request $request): JsonResponse
     {
         Ticket::query()->delete();
+        try {
+            DB::statement('ALTER TABLE tickets AUTO_INCREMENT = 1');
+        } catch (\Throwable $e) {
+            // Ignore if driver doesn't support alter table auto increment
+        }
 
         return response()->json(['message' => 'Queue reset successfully']);
     }
@@ -363,18 +388,12 @@ class QueueController extends Controller
     {
         $totalServed = Ticket::where('status', 'completed')->count();
         $totalSkipped = Ticket::where('status', 'skipped')->count();
-
-        $avgWaitTime = DB::table('tickets')
-            ->where('status', 'completed')
-            ->whereNotNull('served_at')
-            ->whereNotNull('created_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, served_at)) as avg_time')
-            ->value('avg_time') ?? 0;
+        $avgWaitTime = $this->getAverageWaitTime();
 
         return response()->json([
             'totalServed' => $totalServed,
             'totalSkipped' => $totalSkipped,
-            'averageWaitTime' => round((float)$avgWaitTime, 2),
+            'averageWaitTime' => $avgWaitTime,
         ]);
     }
 }

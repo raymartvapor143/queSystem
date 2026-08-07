@@ -32,10 +32,13 @@ const useQueueStore = create(
             voiceEnabled: true,
             lastCalledTrigger: null,
 
+            isFetching: false,
             toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
             toggleVoice: () => set((state) => ({ voiceEnabled: !state.voiceEnabled })),
 
             fetchQueueState: async () => {
+                if (get().isFetching) return;
+                set({ isFetching: true });
                 try {
                     const res = await axios.get('/api/queue');
                     if (res.data) {
@@ -70,6 +73,8 @@ const useQueueStore = create(
                     }
                 } catch (err) {
                     console.warn('API sync error:', err);
+                } finally {
+                    set({ isFetching: false });
                 }
             },
 
@@ -221,21 +226,18 @@ const useQueueStore = create(
         }),
         {
             name: 'queue-storage',
+            partialize: (state) => ({
+                soundEnabled: state.soundEnabled,
+                voiceEnabled: state.voiceEnabled,
+                activeCounter: state.activeCounter,
+            }),
         }
     )
 );
 
+// Initial fetch on application boot
 if (typeof window !== 'undefined') {
     useQueueStore.getState().fetchQueueState();
-    setInterval(() => {
-        useQueueStore.getState().fetchQueueState();
-    }, 3000);
-
-    window.addEventListener('storage', (e) => {
-        if (e.key === 'queue-storage') {
-            useQueueStore.persist.rehydrate();
-        }
-    });
 }
 
 export default useQueueStore;
