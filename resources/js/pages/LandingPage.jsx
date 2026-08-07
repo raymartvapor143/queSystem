@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaTicketAlt, FaPrint, FaTimes, FaQrcode, FaCheckCircle, FaTv, FaUserCog } from 'react-icons/fa';
 import useQueueStore, { SERVICE_CATEGORIES } from '../store/queueStore';
@@ -10,8 +10,40 @@ function LandingPage() {
     const [showModal, setShowModal] = useState(false);
     const [generatedTicket, setGeneratedTicket] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
+    
     const generateTicket = useQueueStore((state) => state.generateTicket);
-    const queue = useQueueStore((state) => state.queue);
+    const queue = useQueueStore((state) => state.queue) || [];
+    const counters = useQueueStore((state) => state.counters) || [];
+    const fetchQueueState = useQueueStore((state) => state.fetchQueueState);
+
+    // Auto poll queue state from server every 3 seconds so dynamic counters and queue numbers stay synced
+    useEffect(() => {
+        fetchQueueState();
+        const syncInterval = setInterval(() => {
+            fetchQueueState();
+        }, 3000);
+        return () => clearInterval(syncInterval);
+    }, [fetchQueueState]);
+
+    const knownKeywords = ['contracting', 'pr', 'technical', 'admin'];
+
+    // Dynamically include any new division counters added from Admin panel
+    const extraCategories = counters
+        .filter((c) => {
+            const low = (c.name || '').toLowerCase();
+            return !knownKeywords.some((k) => low.includes(k));
+        })
+        .map((c) => ({
+            id: `CTR-${c.id}`,
+            counterId: c.id,
+            counterName: c.name,
+            name: c.name,
+            prefix: (c.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase(),
+            icon: '🏛️',
+            desc: `Assigned Officer: ${c.staff || 'Duty Officer'}`,
+        }));
+
+    const allCategories = [...SERVICE_CATEGORIES, ...extraCategories];
 
     const handleCardClick = (cat) => {
         setSelectedCategory(cat.id);
@@ -95,29 +127,44 @@ function LandingPage() {
                         Select Purpose of Visit
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {SERVICE_CATEGORIES.map((cat) => {
+                        {allCategories.map((cat) => {
                             const isSelected = selectedCategory === cat.id;
+                            const pendingCount = queue.filter((t) => {
+                                if (t.categoryId === cat.id) return true;
+                                if (t.counterId && cat.counterId && t.counterId === cat.counterId) return true;
+                                if (cat.counterName && t.counterName === cat.counterName) return true;
+                                if (t.category && t.category === cat.name) return true;
+                                return false;
+                            }).length;
+
                             return (
                                 <motion.button
                                     key={cat.id}
                                     whileHover={{ scale: 1.03 }}
                                     whileTap={{ scale: 0.97 }}
                                     onClick={() => handleCardClick(cat)}
-                                    className={`p-6 rounded-2xl border text-left transition-all duration-300 flex flex-col justify-between h-48 relative overflow-hidden group ${
+                                    className={`p-5 rounded-2xl border text-left transition-all duration-300 flex flex-col justify-between min-h-[13rem] relative overflow-hidden group ${
                                         isSelected
                                             ? 'bg-blue-600 text-white border-blue-400 shadow-xl shadow-blue-600/30 ring-2 ring-blue-400'
                                             : 'bg-white/10 text-white border-white/10 hover:bg-white/15 hover:border-white/30 backdrop-blur-md'
                                     }`}
                                 >
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between mb-2">
                                         <span className="text-4xl">{cat.icon}</span>
                                         <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-white/20">
                                             {cat.prefix}
                                         </span>
                                     </div>
-                                    <div>
-                                        <h3 className="text-lg font-bold mb-1 leading-snug">{cat.name}</h3>
-                                        <p className="text-xs text-blue-200 opacity-90 line-clamp-2">{cat.desc}</p>
+                                    <div className="flex-1 flex flex-col justify-between">
+                                        <div>
+                                            <h3 className="text-lg font-bold mb-1 leading-snug">{cat.name}</h3>
+                                            <p className="text-xs text-blue-200 opacity-90 line-clamp-2">{cat.desc}</p>
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between">
+                                            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 shadow-sm">
+                                                Pending Queue ({pendingCount})
+                                            </span>
+                                        </div>
                                     </div>
                                 </motion.button>
                             );

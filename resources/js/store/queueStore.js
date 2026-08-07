@@ -59,17 +59,33 @@ const useQueueStore = create(
                             trigger = Date.now();
                         }
 
-                        set({
-                            queue: res.data.queue || [],
-                            currentQueue: newVal || null,
-                            servingQueues: newServing,
-                            counters: res.data.counters || get().counters,
-                            activeCounter: res.data.activeCounter || 1,
-                            lastTicketNumber: res.data.lastTicketNumber || 0,
-                            completedQueues: res.data.completedQueues || [],
-                            statistics: res.data.statistics || get().statistics,
-                            lastCalledTrigger: trigger,
-                        });
+                        const state = get();
+                        const newQueue = res.data.queue || [];
+                        const newCounters = res.data.counters || state.counters;
+                        const newLastNumber = res.data.lastTicketNumber || 0;
+                        const newCompleted = res.data.completedQueues || [];
+                        const newStats = res.data.statistics || state.statistics;
+
+                        // Deep string check to eliminate redundant React re-renders
+                        const queueChanged = JSON.stringify(state.queue) !== JSON.stringify(newQueue);
+                        const servingChanged = JSON.stringify(state.servingQueues) !== JSON.stringify(newServing);
+                        const countersChanged = JSON.stringify(state.counters) !== JSON.stringify(newCounters);
+                        const statsChanged = JSON.stringify(state.statistics) !== JSON.stringify(newStats);
+                        const triggerChanged = state.lastCalledTrigger !== trigger;
+
+                        if (queueChanged || servingChanged || countersChanged || statsChanged || triggerChanged) {
+                            set({
+                                queue: newQueue,
+                                currentQueue: newVal || null,
+                                servingQueues: newServing,
+                                counters: newCounters,
+                                activeCounter: res.data.activeCounter || 1,
+                                lastTicketNumber: newLastNumber,
+                                completedQueues: newCompleted,
+                                statistics: newStats,
+                                lastCalledTrigger: trigger,
+                            });
+                        }
                     }
                 } catch (err) {
                     console.warn('API sync error:', err);
@@ -79,7 +95,21 @@ const useQueueStore = create(
             },
 
             generateTicket: async (categoryId = 'GEN') => {
-                const category = SERVICE_CATEGORIES.find(c => c.id === categoryId) || SERVICE_CATEGORIES[3];
+                let category = SERVICE_CATEGORIES.find(c => c.id === categoryId);
+                if (!category && String(categoryId).startsWith('CTR-')) {
+                    const counterId = parseInt(String(categoryId).replace('CTR-', ''), 10);
+                    const foundCounter = get().counters.find(c => c.id === counterId);
+                    if (foundCounter) {
+                        category = {
+                            id: categoryId,
+                            name: foundCounter.name,
+                            prefix: foundCounter.name.substring(0, 3).toUpperCase(),
+                        };
+                    }
+                }
+                if (!category) {
+                    category = SERVICE_CATEGORIES[3];
+                }
                 const tempTicket = {
                     id: Date.now(),
                     number: `${category.prefix}-...`,

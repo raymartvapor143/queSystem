@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use App\Models\Ticket;
 use App\Models\Counter;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class QueueController extends Controller
 {
@@ -37,7 +38,28 @@ class QueueController extends Controller
             'ADM' => ['prefix' => 'ADM', 'name' => 'Admin Division'],
         ];
 
-        return $categories[$catId] ?? ['prefix' => $catId, 'name' => 'General Inquiry'];
+        if (isset($categories[$catId])) {
+            return $categories[$catId];
+        }
+
+        if (str_starts_with($catId, 'CTR-')) {
+            $counterId = (int) str_replace('CTR-', '', $catId);
+            $counter = Counter::find($counterId);
+            if ($counter) {
+                $cleanName = preg_replace('/[^A-Za-z0-9]/', '', $counter->name) ?: 'CTR';
+                $prefix = strtoupper(substr($cleanName, 0, 3));
+                return ['prefix' => $prefix, 'name' => $counter->name];
+            }
+        }
+
+        $counter = Counter::find($catId);
+        if ($counter) {
+            $cleanName = preg_replace('/[^A-Za-z0-9]/', '', $counter->name) ?: 'CTR';
+            $prefix = strtoupper(substr($cleanName, 0, 3));
+            return ['prefix' => $prefix, 'name' => $counter->name];
+        }
+
+        return ['prefix' => strtoupper(substr($catId, 0, 3)), 'name' => $catId];
     }
 
     public function index(): JsonResponse
@@ -69,8 +91,14 @@ class QueueController extends Controller
             ->get()
             ->map(fn($t) => $this->formatTicket($t));
 
-        $totalServed = Ticket::where('status', 'completed')->count();
-        $totalSkipped = Ticket::where('status', 'skipped')->count();
+        // Short term 2-second cache for heavy count queries under multi-user polling
+        $stats = Cache::remember('queue_stats_counts', 2, function () {
+            return [
+                'totalServed' => Ticket::where('status', 'completed')->count(),
+                'totalSkipped' => Ticket::where('status', 'skipped')->count(),
+                'lastTicketNumber' => Ticket::count(),
+            ];
+        });
 
         $avgWaitTime = $this->getAverageWaitTime();
 
@@ -84,11 +112,11 @@ class QueueController extends Controller
                 'staff' => $c->staff,
             ]),
             'activeCounter' => 1,
-            'lastTicketNumber' => Ticket::count(),
+            'lastTicketNumber' => $stats['lastTicketNumber'],
             'completedQueues' => $completedTickets,
             'statistics' => [
-                'totalServed' => $totalServed,
-                'totalSkipped' => $totalSkipped,
+                'totalServed' => $stats['totalServed'],
+                'totalSkipped' => $stats['totalSkipped'],
                 'averageWaitTime' => $avgWaitTime,
             ],
         ];
@@ -112,32 +140,36 @@ class QueueController extends Controller
             'status' => 'pending',
         ]);
 
+        Cache::forget('queue_stats_counts');
+
         return response()->json(['ticket' => $this->formatTicket($ticket)]);
     }
 
     private function getAverageWaitTime(): float
     {
-        try {
-            $driver = DB::connection()->getDriverName();
-            if ($driver === 'sqlite') {
-                $avg = DB::table('tickets')
-                    ->where('status', 'completed')
-                    ->whereNotNull('served_at')
-                    ->whereNotNull('created_at')
-                    ->selectRaw('AVG(strftime("%s", served_at) - strftime("%s", created_at)) as avg_time')
-                    ->value('avg_time');
-            } else {
-                $avg = DB::table('tickets')
-                    ->where('status', 'completed')
-                    ->whereNotNull('served_at')
-                    ->whereNotNull('created_at')
-                    ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, served_at)) as avg_time')
-                    ->value('avg_time');
+        return Cache::remember('queue_avg_wait_time', 5, function () {
+            try {
+                $driver = DB::connection()->getDriverName();
+                if ($driver === 'sqlite') {
+                    $avg = DB::table('tickets')
+                        ->where('status', 'completed')
+                        ->whereNotNull('served_at')
+                        ->whereNotNull('created_at')
+                        ->selectRaw('AVG(strftime("%s", served_at) - strftime("%s", created_at)) as avg_time')
+                        ->value('avg_time');
+                } else {
+                    $avg = DB::table('tickets')
+                        ->where('status', 'completed')
+                        ->whereNotNull('served_at')
+                        ->whereNotNull('created_at')
+                        ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, served_at)) as avg_time')
+                        ->value('avg_time');
+                }
+                return round((float)($avg ?? 0), 2);
+            } catch (\Throwable $e) {
+                return 0.0;
             }
-            return round((float)($avg ?? 0), 2);
-        } catch (\Throwable $e) {
-            return 0.0;
-        }
+        });
     }
 
     private function getCounterForCategory(?string $catId, ?int $requestedCounterId = null): Counter
@@ -148,6 +180,20 @@ class QueueController extends Controller
         }
 
         if ($catId) {
+            // 1. Check if catId starts with CTR- (e.g., CTR-5)
+            if (str_starts_with($catId, 'CTR-')) {
+                $cId = (int) str_replace('CTR-', '', $catId);
+                $counter = Counter::find($cId);
+                if ($counter) return $counter;
+            }
+
+            // 2. Check if catId is a numeric counter ID
+            if (is_numeric($catId)) {
+                $counter = Counter::find((int) $catId);
+                if ($counter) return $counter;
+            }
+
+            // 3. Standard category code mapping
             $map = [
                 'CON' => 'Contracting',
                 'PR'  => 'PR',
@@ -155,7 +201,11 @@ class QueueController extends Controller
                 'ADM' => 'Admin',
             ];
             $keyword = $map[$catId] ?? $catId;
-            $counter = Counter::where('name', 'LIKE', "%{$keyword}%")->first();
+
+            // Search by name or staff officer
+            $counter = Counter::where('name', 'LIKE', "%{$keyword}%")
+                ->orWhere('staff', 'LIKE', "%{$keyword}%")
+                ->first();
             if ($counter) {
                 return $counter;
             }
@@ -167,17 +217,41 @@ class QueueController extends Controller
     public function next(Request $request): JsonResponse
     {
         $requestedCounterId = $request->input('counterId');
+        $counter = null;
+        if ($requestedCounterId) {
+            $counter = Counter::find($requestedCounterId);
+        }
 
-        $nextTicket = Ticket::where('status', 'pending')
-            ->orderBy('id', 'asc')
-            ->first();
+        $nextTicket = null;
+        if ($counter) {
+            $ctrCode = "CTR-{$counter->id}";
+            // Prioritize finding pending tickets created for this specific division counter
+            $nextTicket = Ticket::where('status', 'pending')
+                ->where(function ($q) use ($counter, $ctrCode) {
+                    $q->where('category_id', $ctrCode)
+                      ->orWhere('category_id', (string) $counter->id)
+                      ->orWhere('counter_id', $counter->id)
+                      ->orWhere('category_name', 'LIKE', "%{$counter->name}%");
+                })
+                ->orderBy('id', 'asc')
+                ->first();
+        }
+
+        // Fallback to oldest pending ticket overall
+        if (!$nextTicket) {
+            $nextTicket = Ticket::where('status', 'pending')
+                ->orderBy('id', 'asc')
+                ->first();
+        }
 
         if (!$nextTicket) {
             return response()->json(['error' => 'No tickets in queue'], 400);
         }
 
-        // Automatic counter selection based on visitor purpose (category)
-        $counter = $this->getCounterForCategory($nextTicket->category_id, $requestedCounterId);
+        // Automatic counter selection based on ticket category if counter wasn't requested
+        if (!$counter) {
+            $counter = $this->getCounterForCategory($nextTicket->category_id, $requestedCounterId);
+        }
 
         // Complete any ticket currently being served at this specific counter
         Ticket::where('status', 'serving')

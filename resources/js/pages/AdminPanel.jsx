@@ -140,9 +140,39 @@ function AdminPanel() {
         return `${Math.round(seconds / 3600)}h`;
     };
 
+    const knownKeywords = ['contracting', 'pr', 'technical', 'admin'];
+
+    // Dynamically include any new division counters added from Admin panel
+    const extraCategories = (counters || [])
+        .filter((c) => {
+            const low = (c.name || '').toLowerCase();
+            return !knownKeywords.some((k) => low.includes(k));
+        })
+        .map((c) => ({
+            id: `CTR-${c.id}`,
+            counterId: c.id,
+            counterName: c.name,
+            name: c.name,
+            prefix: (c.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase(),
+            icon: '🏛️',
+            desc: `Assigned Officer: ${c.staff || 'Duty Officer'}`,
+        }));
+
+    const allCategories = [...SERVICE_CATEGORIES, ...extraCategories];
+
     const filteredQueue = categoryFilter === 'ALL'
         ? queue
-        : queue.filter(t => t.categoryId === categoryFilter);
+        : queue.filter((t) => {
+            if (t.categoryId === categoryFilter) return true;
+            if (t.counterId && categoryFilter.startsWith('CTR-') && t.counterId === parseInt(categoryFilter.replace('CTR-', ''), 10)) return true;
+            const targetCat = allCategories.find((c) => c.id === categoryFilter);
+            if (targetCat) {
+                if (targetCat.counterId && t.counterId === targetCat.counterId) return true;
+                if (targetCat.counterName && t.counterName === targetCat.counterName) return true;
+                if (t.category && t.category === targetCat.name) return true;
+            }
+            return false;
+        });
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 p-4 md:p-8">
@@ -318,75 +348,7 @@ function AdminPanel() {
                         </div>
                     </motion.div>
 
-                    {/* Queue Control Buttons */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="bg-white/10 backdrop-blur-lg rounded-3xl p-6 border border-white/20"
-                    >
-                        <h2 className="text-lg font-bold text-white mb-4">Counter Controls</h2>
 
-                        <p className="text-xs text-blue-300/80 mb-4">
-                            Calling automatically routes tickets to their designated division counters based on visitor purpose.
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <motion.button
-                                whileHover={{ scale: 1.03 }}
-                                whileTap={{ scale: 0.97 }}
-                                onClick={handleNextQueue}
-                                disabled={queue.length === 0}
-                                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
-                            >
-                                <FaArrowRight />
-                                <span>Call Next</span>
-                            </motion.button>
-
-                            <motion.button
-                                whileHover={{ scale: 1.03 }}
-                                whileTap={{ scale: 0.97 }}
-                                onClick={recallQueue}
-                                disabled={!currentQueue}
-                                className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
-                            >
-                                <FaRedo />
-                                <span>Recall Voice</span>
-                            </motion.button>
-
-                            <motion.button
-                                whileHover={{ scale: 1.03 }}
-                                whileTap={{ scale: 0.97 }}
-                                onClick={skipQueue}
-                                disabled={queue.length === 0}
-                                className="bg-orange-600 hover:bg-orange-700 disabled:bg-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
-                            >
-                                <FaForward />
-                                <span>Skip</span>
-                            </motion.button>
-
-                            <motion.button
-                                whileHover={{ scale: 1.03 }}
-                                whileTap={{ scale: 0.97 }}
-                                onClick={completeQueue}
-                                disabled={!currentQueue}
-                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
-                            >
-                                <FaCheck />
-                                <span>Complete</span>
-                            </motion.button>
-                        </div>
-
-                        <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={handleResetQueue}
-                            className="w-full mt-4 bg-red-600/80 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs border border-red-500/30"
-                        >
-                            <FaTrash />
-                            <span>Reset Entire Queue</span>
-                        </motion.button>
-                    </motion.div>
                 </div>
 
                 {/* Center Column - Pending Queue */}
@@ -443,8 +405,15 @@ function AdminPanel() {
                         >
                             All ({queue.length})
                         </button>
-                        {SERVICE_CATEGORIES.map((cat) => {
-                            const count = queue.filter(t => t.categoryId === cat.id).length;
+                        {allCategories.map((cat) => {
+                            const count = queue.filter((t) => {
+                                if (t.categoryId === cat.id) return true;
+                                if (t.counterId && cat.counterId && t.counterId === cat.counterId) return true;
+                                if (cat.counterName && t.counterName === cat.counterName) return true;
+                                if (t.category && t.category === cat.name) return true;
+                                return false;
+                            }).length;
+
                             return (
                                 <button
                                     key={cat.id}

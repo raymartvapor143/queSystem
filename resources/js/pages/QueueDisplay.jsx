@@ -250,6 +250,11 @@ function QueueDisplay() {
 
             if (newTicketsToAnnounce.length === 0) return;
 
+            // Prevent unbounded memory growth over long uptime
+            if (announcedKeysRef.current.size > 200) {
+                announcedKeysRef.current.clear();
+            }
+
             // Mark these new ticket call keys as announced
             newTicketsToAnnounce.forEach(ticket => {
                 const key = `${ticket.id}_${ticket.recalledAt || ticket.servedAt || ''}`;
