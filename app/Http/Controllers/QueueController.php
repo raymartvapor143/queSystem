@@ -120,18 +120,33 @@ class QueueController extends Controller
         return response()->json(['ticket' => $this->formatTicket($ticket)]);
     }
 
+    private function getCounterForCategory(?string $catId, ?int $fallbackCounterId = null): Counter
+    {
+        if ($catId) {
+            $map = [
+                'CON' => 'Contracting',
+                'PR'  => 'PR',
+                'TEC' => 'Technical',
+                'ADM' => 'Admin',
+            ];
+            $keyword = $map[$catId] ?? $catId;
+            $counter = Counter::where('name', 'LIKE', "%{$keyword}%")->first();
+            if ($counter) {
+                return $counter;
+            }
+        }
+
+        if ($fallbackCounterId) {
+            $counter = Counter::find($fallbackCounterId);
+            if ($counter) return $counter;
+        }
+
+        return Counter::first() ?? Counter::create(['name' => 'General Counter', 'staff' => 'Officer']);
+    }
+
     public function next(Request $request): JsonResponse
     {
-        $counterId = $request->input('counterId', 1);
-        $counter = Counter::find($counterId) ?? Counter::first();
-
-        // Complete any ticket currently being served at this counter
-        Ticket::where('status', 'serving')
-            ->where('counter_id', $counterId)
-            ->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
+        $requestedCounterId = $request->input('counterId');
 
         $nextTicket = Ticket::where('status', 'pending')
             ->orderBy('id', 'asc')
@@ -141,12 +156,25 @@ class QueueController extends Controller
             return response()->json(['error' => 'No tickets in queue'], 400);
         }
 
+        // Automatic counter selection based on visitor purpose (category)
+        $counter = $this->getCounterForCategory($nextTicket->category_id, $requestedCounterId);
+
+        // Complete any ticket currently being served at this specific counter
+        Ticket::where('status', 'serving')
+            ->where('counter_id', $counter->id)
+            ->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+            ]);
+
+        $now = now();
         $nextTicket->update([
             'status' => 'serving',
-            'counter_id' => $counter ? $counter->id : 1,
-            'counter_name' => $counter ? $counter->name : 'Counter 1',
-            'staff_name' => $counter ? $counter->staff : 'Officer',
-            'served_at' => now(),
+            'counter_id' => $counter->id,
+            'counter_name' => $counter->name,
+            'staff_name' => $counter->staff,
+            'served_at' => $now,
+            'recalled_at' => $now,
         ]);
 
         return response()->json(['currentQueue' => $this->formatTicket($nextTicket)]);
@@ -155,32 +183,53 @@ class QueueController extends Controller
     public function callBatch(Request $request): JsonResponse
     {
         $ticketIds = $request->input('ticketIds', []);
-        $counterId = $request->input('counterId', 1);
-        $counter = Counter::find($counterId) ?? Counter::first();
+        $requestedCounterId = $request->input('counterId');
 
         if (empty($ticketIds)) {
             return response()->json(['error' => 'No tickets selected'], 400);
         }
 
-        // Complete previous tickets for this counter
+        $tickets = Ticket::whereIn('id', $ticketIds)
+            ->where('status', 'pending')
+            ->get();
+
+        if ($tickets->isEmpty()) {
+            return response()->json(['error' => 'Selected tickets are no longer pending'], 400);
+        }
+
+        $now = now();
+        $counterMap = [];
+
+        // 1. Resolve counter for each ticket and collect unique counters to clear
+        foreach ($tickets as $ticket) {
+            $counter = $this->getCounterForCategory($ticket->category_id, $requestedCounterId);
+            $counterMap[$ticket->id] = $counter;
+        }
+
+        // Extract unique counter IDs that need previous serving tickets cleared
+        $uniqueCounterIds = array_unique(array_map(fn($c) => $c->id, array_values($counterMap)));
+
+        // 2. Complete previous tickets for affected counters ONCE
         Ticket::where('status', 'serving')
-            ->where('counter_id', $counterId)
+            ->whereIn('counter_id', $uniqueCounterIds)
             ->update([
                 'status' => 'completed',
-                'completed_at' => now(),
+                'completed_at' => $now,
             ]);
 
-        // Mark selected tickets as serving for this counter
-        Ticket::whereIn('id', $ticketIds)
-            ->where('status', 'pending')
-            ->update([
+        // 3. Mark ALL selected tickets in batch as serving
+        foreach ($tickets as $ticket) {
+            $counter = $counterMap[$ticket->id];
+
+            $ticket->update([
                 'status' => 'serving',
-                'counter_id' => $counter ? $counter->id : 1,
-                'counter_name' => $counter ? $counter->name : 'Counter 1',
-                'staff_name' => $counter ? $counter->staff : 'Officer',
-                'served_at' => now(),
-                'recalled_at' => now(),
+                'counter_id' => $counter->id,
+                'counter_name' => $counter->name,
+                'staff_name' => $counter->staff,
+                'served_at' => $now,
+                'recalled_at' => $now,
             ]);
+        }
 
         $servingTickets = Ticket::whereIn('id', $ticketIds)
             ->get()
@@ -200,17 +249,23 @@ class QueueController extends Controller
         if ($counterId) {
             $query->where('counter_id', $counterId);
         }
-        $servingTicket = $query->latest('served_at')->first();
+        $servingTickets = $query->get();
 
-        if (!$servingTicket) {
+        if ($servingTickets->isEmpty()) {
             return response()->json(['error' => 'No current queue'], 400);
         }
 
-        $servingTicket->update([
-            'recalled_at' => now(),
-        ]);
+        $now = now();
+        foreach ($servingTickets as $t) {
+            $t->update([
+                'recalled_at' => $now,
+            ]);
+        }
 
-        return response()->json(['currentQueue' => $this->formatTicket($servingTicket)]);
+        return response()->json([
+            'currentQueue' => $this->formatTicket($servingTickets->first()),
+            'servingTickets' => $servingTickets->map(fn($t) => $this->formatTicket($t)),
+        ]);
     }
 
     public function skip(Request $request): JsonResponse

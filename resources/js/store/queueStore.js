@@ -41,21 +41,25 @@ const useQueueStore = create(
                     if (res.data) {
                         const currentVal = get().currentQueue;
                         const newVal = res.data.currentQueue;
+                        const oldServing = get().servingQueues || [];
+                        const newServing = res.data.servingQueues || (newVal ? [newVal] : []);
 
                         let trigger = get().lastCalledTrigger;
-                        if (
-                            newVal &&
-                            (!currentVal ||
-                                currentVal.id !== newVal.id ||
-                                currentVal.recalledAt !== newVal.recalledAt)
-                        ) {
+                        // Check if any ticket in new serving queues is new or has been recalled/re-served
+                        const hasNewCall = newServing.some((nt) => {
+                            const match = oldServing.find((ot) => ot.id === nt.id);
+                            if (!match) return true;
+                            return match.recalledAt !== nt.recalledAt || match.servedAt !== nt.servedAt;
+                        });
+
+                        if (hasNewCall || (newVal && (!currentVal || currentVal.id !== newVal.id))) {
                             trigger = Date.now();
                         }
 
                         set({
                             queue: res.data.queue || [],
                             currentQueue: newVal || null,
-                            servingQueues: res.data.servingQueues || (newVal ? [newVal] : []),
+                            servingQueues: newServing,
                             counters: res.data.counters || get().counters,
                             activeCounter: res.data.activeCounter || 1,
                             lastTicketNumber: res.data.lastTicketNumber || 0,
@@ -105,6 +109,7 @@ const useQueueStore = create(
                 try {
                     const res = await axios.post('/api/queue/next', { counterId });
                     if (res.data && res.data.currentQueue) {
+                        set({ lastCalledTrigger: Date.now() });
                         await get().fetchQueueState();
                         return res.data.currentQueue;
                     }
@@ -128,10 +133,11 @@ const useQueueStore = create(
                 return null;
             },
 
-            recallQueue: async () => {
+            recallQueue: async (counterId) => {
                 try {
-                    const res = await axios.post('/api/queue/recall');
-                    if (res.data && res.data.currentQueue) {
+                    const res = await axios.post('/api/queue/recall', { counterId });
+                    if (res.data) {
+                        set({ lastCalledTrigger: Date.now() });
                         await get().fetchQueueState();
                         return res.data.currentQueue;
                     }

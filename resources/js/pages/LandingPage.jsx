@@ -9,6 +9,7 @@ function LandingPage() {
     const [pendingCategory, setPendingCategory] = useState(null);
     const [showModal, setShowModal] = useState(false);
     const [generatedTicket, setGeneratedTicket] = useState(null);
+    const [isGenerating, setIsGenerating] = useState(false);
     const generateTicket = useQueueStore((state) => state.generateTicket);
     const queue = useQueueStore((state) => state.queue);
 
@@ -19,12 +20,17 @@ function LandingPage() {
     };
 
     const handleConfirmGenerate = async () => {
-        if (!pendingCategory) return;
-        const ticket = await generateTicket(pendingCategory.id);
-        setShowConfirmModal(false);
-        if (ticket) {
-            setGeneratedTicket(ticket);
-            setShowModal(true);
+        if (!pendingCategory || isGenerating) return;
+        setIsGenerating(true);
+        try {
+            const ticket = await generateTicket(pendingCategory.id);
+            setShowConfirmModal(false);
+            if (ticket) {
+                setGeneratedTicket(ticket);
+                setShowModal(true);
+            }
+        } finally {
+            setIsGenerating(false);
         }
     };
 
@@ -172,10 +178,27 @@ function LandingPage() {
                                 </button>
                                 <button
                                     onClick={handleConfirmGenerate}
-                                    className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold py-3.5 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+                                    disabled={isGenerating}
+                                    className={`flex-1 text-white font-extrabold py-3.5 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-lg ${
+                                        isGenerating
+                                            ? 'bg-blue-400 cursor-not-allowed shadow-blue-300/20'
+                                            : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-600/30 cursor-pointer'
+                                    }`}
                                 >
-                                    <FaTicketAlt />
-                                    <span>Generate Ticket</span>
+                                    {isGenerating ? (
+                                        <>
+                                            <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                            </svg>
+                                            <span>Generating...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FaTicketAlt />
+                                            <span>Generate Ticket</span>
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </motion.div>

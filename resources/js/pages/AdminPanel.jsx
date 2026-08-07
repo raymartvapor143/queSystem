@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     FaArrowRight,
@@ -36,6 +36,7 @@ function AdminPanel() {
     const [newCounterName, setNewCounterName] = useState('');
     const [newCounterStaff, setNewCounterStaff] = useState('');
 
+    const fetchQueueState = useQueueStore((state) => state.fetchQueueState);
     const queue = useQueueStore((state) => state.queue);
     const currentQueue = useQueueStore((state) => state.currentQueue);
     const servingQueues = useQueueStore((state) => state.servingQueues) || [];
@@ -56,9 +57,17 @@ function AdminPanel() {
     const removeCounter = useQueueStore((state) => state.removeCounter);
     const setActiveCounter = useQueueStore((state) => state.setActiveCounter);
 
+    // Auto poll queue state from server every 2 seconds
+    useEffect(() => {
+        fetchQueueState();
+        const syncInterval = setInterval(() => {
+            fetchQueueState();
+        }, 2000);
+        return () => clearInterval(syncInterval);
+    }, [fetchQueueState]);
+
     const handleNextQueue = () => {
-        nextQueue(selectedCounter);
-        setActiveCounter(selectedCounter);
+        nextQueue();
     };
 
     const toggleSelectTicket = (id) => {
@@ -77,7 +86,7 @@ function AdminPanel() {
 
     const handleCallBatch = () => {
         if (selectedTicketIds.length > 0) {
-            callBatchTickets(selectedTicketIds, selectedCounter);
+            callBatchTickets(selectedTicketIds);
             setSelectedTicketIds([]);
         }
     };
@@ -318,23 +327,9 @@ function AdminPanel() {
                     >
                         <h2 className="text-lg font-bold text-white mb-4">Counter Controls</h2>
 
-                        {/* Counter Selection */}
-                        <div className="mb-5">
-                            <label className="text-blue-200 text-xs font-semibold uppercase tracking-wider mb-2 block">
-                                Operating Counter
-                            </label>
-                            <select
-                                value={selectedCounter}
-                                onChange={(e) => setSelectedCounter(Number(e.target.value))}
-                                className="w-full bg-slate-900/80 border border-blue-400/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                            >
-                                {counters.map((counter) => (
-                                    <option key={counter.id} value={counter.id} className="bg-slate-900 text-white">
-                                        {counter.name} ({counter.staff})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        <p className="text-xs text-blue-300/80 mb-4">
+                            Calling automatically routes tickets to their designated division counters based on visitor purpose.
+                        </p>
 
                         <div className="grid grid-cols-2 gap-3">
                             <motion.button
