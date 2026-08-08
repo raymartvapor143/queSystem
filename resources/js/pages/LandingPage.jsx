@@ -21,7 +21,7 @@ function LandingPage() {
         fetchQueueState();
         const syncInterval = setInterval(() => {
             fetchQueueState();
-        }, 3000);
+        }, 15000);
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
 

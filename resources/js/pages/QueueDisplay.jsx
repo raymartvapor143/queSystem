@@ -124,12 +124,12 @@ function QueueDisplay() {
     const isSpeakingRef = useRef(false);
     const activeUtteranceRef = useRef(null);
 
-    // Auto poll queue state from server every 3 seconds
+    // Auto poll queue state from server every 15 seconds (fallback only)
     useEffect(() => {
         fetchQueueState();
         const syncInterval = setInterval(() => {
             fetchQueueState();
-        }, 3000);
+        }, 15000);
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
 

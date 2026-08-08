@@ -4,6 +4,22 @@ import axios from 'axios';
 
 // Hardcoded SERVICE_CATEGORIES removed. Categories are now derived dynamically from database counters.
 
+let syncChannel = null;
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    syncChannel = new BroadcastChannel('queue_sync_channel');
+    syncChannel.onmessage = (event) => {
+        if (event.data && event.data.type === 'REFRESH_QUEUE') {
+            useQueueStore.getState().fetchQueueState();
+        }
+    };
+}
+
+const broadcastSync = () => {
+    if (syncChannel) {
+        syncChannel.postMessage({ type: 'REFRESH_QUEUE' });
+    }
+};
+
 const useQueueStore = create(
     persist(
         (set, get) => ({
@@ -133,6 +149,7 @@ const useQueueStore = create(
                     const res = await axios.post('/api/queue/generate', { categoryId });
                     if (res.data && res.data.ticket) {
                         await get().fetchQueueState();
+                        broadcastSync();
                         return res.data.ticket;
                     }
                 } catch (err) {
@@ -147,6 +164,7 @@ const useQueueStore = create(
                     queue: [...queue, newTicket],
                     lastTicketNumber: newNumber,
                 });
+                broadcastSync();
                 return newTicket;
             },
 
@@ -156,6 +174,7 @@ const useQueueStore = create(
                     if (res.data && res.data.currentQueue) {
                         set({ lastCalledTrigger: Date.now() });
                         await get().fetchQueueState();
+                        broadcastSync();
                         return res.data.currentQueue;
                     }
                 } catch (err) {
@@ -170,6 +189,7 @@ const useQueueStore = create(
                     if (res.data) {
                         set({ lastCalledTrigger: Date.now() });
                         await get().fetchQueueState();
+                        broadcastSync();
                         return res.data.servingTickets;
                     }
                 } catch (err) {
@@ -184,6 +204,7 @@ const useQueueStore = create(
                     if (res.data) {
                         set({ lastCalledTrigger: Date.now() });
                         await get().fetchQueueState();
+                        broadcastSync();
                         return res.data.currentQueue;
                     }
                 } catch (err) {
@@ -197,6 +218,7 @@ const useQueueStore = create(
                     const res = await axios.post('/api/queue/skip');
                     if (res.data) {
                         await get().fetchQueueState();
+                        broadcastSync();
                         return res.data.skippedTicket;
                     }
                 } catch (err) {
@@ -210,6 +232,7 @@ const useQueueStore = create(
                     const res = await axios.post('/api/queue/complete', { counterId });
                     if (res.data) {
                         await get().fetchQueueState();
+                        broadcastSync();
                         return res.data;
                     }
                 } catch (err) {
@@ -222,6 +245,7 @@ const useQueueStore = create(
                 try {
                     await axios.post('/api/queue/reset');
                     await get().fetchQueueState();
+                    broadcastSync();
                 } catch (err) {
                     console.warn('Reset API error:', err);
                 }
@@ -232,6 +256,7 @@ const useQueueStore = create(
                     const res = await axios.post('/api/counters', { name, staff });
                     if (res.data && res.data.counters) {
                         set({ counters: res.data.counters });
+                        broadcastSync();
                     }
                 } catch (err) {
                     console.warn('Add counter API error:', err);
@@ -243,6 +268,7 @@ const useQueueStore = create(
                     const res = await axios.put(`/api/counters/${counterId}`, { staffName, name: counterName });
                     if (res.data && res.data.counters) {
                         set({ counters: res.data.counters });
+                        broadcastSync();
                     }
                 } catch (err) {
                     console.warn('Update counter API error:', err);
@@ -254,6 +280,7 @@ const useQueueStore = create(
                     const res = await axios.delete(`/api/counters/${counterId}`);
                     if (res.data && res.data.counters) {
                         set({ counters: res.data.counters });
+                        broadcastSync();
                     }
                 } catch (err) {
                     console.warn('Remove counter API error:', err);
