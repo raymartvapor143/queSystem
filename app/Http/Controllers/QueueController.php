@@ -87,8 +87,8 @@ class QueueController extends Controller
         // Short term 2-second cache for heavy count queries under multi-user polling
         $stats = Cache::remember('queue_stats_counts', 2, function () {
             return [
-                'totalServed' => Ticket::where('status', 'completed')->count(),
-                'totalSkipped' => Ticket::where('status', 'skipped')->count(),
+                'totalServed' => Ticket::where('status', 'completed')->whereDate('completed_at', today())->count(),
+                'totalSkipped' => Ticket::where('status', 'skipped')->whereDate('updated_at', today())->count(),
                 'lastTicketNumber' => Ticket::count(),
             ];
         });
