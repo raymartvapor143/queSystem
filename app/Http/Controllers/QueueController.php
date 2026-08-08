@@ -77,13 +77,6 @@ class QueueController extends Controller
         $servingTicket = $servingTickets->first();
 
         $counters = Counter::orderBy('id', 'asc')->get();
-        if ($counters->isEmpty()) {
-            Counter::create(['name' => 'Contracting Division Counter', 'staff' => 'Contracting Officer']);
-            Counter::create(['name' => 'PR Division Counter', 'staff' => 'PR Officer']);
-            Counter::create(['name' => 'Technical Division Counter', 'staff' => 'Technical Inspector']);
-            Counter::create(['name' => 'Admin Division Counter', 'staff' => 'Admin Officer']);
-            $counters = Counter::orderBy('id', 'asc')->get();
-        }
 
         $completedTickets = Ticket::whereIn('status', ['completed', 'skipped'])
             ->orderBy('id', 'desc')
@@ -172,7 +165,7 @@ class QueueController extends Controller
         });
     }
 
-    private function getCounterForCategory(?string $catId, ?int $requestedCounterId = null): Counter
+    private function getCounterForCategory(?string $catId, ?int $requestedCounterId = null): ?Counter
     {
         if ($requestedCounterId) {
             $counter = Counter::find($requestedCounterId);
@@ -211,7 +204,7 @@ class QueueController extends Controller
             }
         }
 
-        return Counter::first() ?? Counter::create(['name' => 'General Counter', 'staff' => 'Officer']);
+        return Counter::first();
     }
 
     public function next(Request $request): JsonResponse
@@ -225,7 +218,7 @@ class QueueController extends Controller
         $nextTicket = null;
         if ($counter) {
             $ctrCode = "CTR-{$counter->id}";
-            // Prioritize finding pending tickets created for this specific division counter
+            // Find oldest pending ticket for this counter or its matching keywords
             $nextTicket = Ticket::where('status', 'pending')
                 ->where(function ($q) use ($counter, $ctrCode) {
                     $q->where('category_id', $ctrCode)
@@ -251,6 +244,10 @@ class QueueController extends Controller
         // Automatic counter selection based on ticket category if counter wasn't requested
         if (!$counter) {
             $counter = $this->getCounterForCategory($nextTicket->category_id, $requestedCounterId);
+        }
+
+        if (!$counter) {
+            return response()->json(['error' => 'No active counters available. Please configure counters in the Admin panel.'], 400);
         }
 
         // Complete any ticket currently being served at this specific counter

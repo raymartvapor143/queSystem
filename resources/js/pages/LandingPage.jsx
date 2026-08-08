@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaTicketAlt, FaPrint, FaTimes, FaQrcode, FaCheckCircle, FaTv, FaUserCog } from 'react-icons/fa';
-import useQueueStore, { SERVICE_CATEGORIES } from '../store/queueStore';
+import useQueueStore from '../store/queueStore';
 
 function LandingPage() {
-    const [selectedCategory, setSelectedCategory] = useState('CON');
+    const [selectedCategory, setSelectedCategory] = useState('');
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [pendingCategory, setPendingCategory] = useState(null);
     const [showModal, setShowModal] = useState(false);
@@ -25,25 +25,42 @@ function LandingPage() {
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
 
-    const knownKeywords = ['contracting', 'pr', 'technical', 'admin'];
+    useEffect(() => {
+        if (counters.length > 0 && !selectedCategory) {
+            setSelectedCategory(`CTR-${counters[0].id}`);
+        }
+    }, [counters, selectedCategory]);
 
-    // Dynamically include any new division counters added from Admin panel
-    const extraCategories = counters
-        .filter((c) => {
-            const low = (c.name || '').toLowerCase();
-            return !knownKeywords.some((k) => low.includes(k));
-        })
-        .map((c) => ({
+    // Generate all categories/cards dynamically from database counters
+    const allCategories = (counters || []).map((c) => {
+        const low = (c.name || '').toLowerCase();
+        let prefix = (c.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase();
+        let icon = '🏛️';
+
+        if (low.includes('contracting') || low.includes('con')) {
+            icon = '📄';
+            prefix = 'CON';
+        } else if (low.includes('pr')) {
+            icon = '📋';
+            prefix = 'PR';
+        } else if (low.includes('technical') || low.includes('tec')) {
+            icon = '⚙️';
+            prefix = 'TEC';
+        } else if (low.includes('admin') || low.includes('adm')) {
+            icon = '🏢';
+            prefix = 'ADM';
+        }
+
+        return {
             id: `CTR-${c.id}`,
             counterId: c.id,
             counterName: c.name,
             name: c.name,
-            prefix: (c.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase(),
-            icon: '🏛️',
+            prefix: prefix,
+            icon: icon,
             desc: `Assigned Officer: ${c.staff || 'Duty Officer'}`,
-        }));
-
-    const allCategories = [...SERVICE_CATEGORIES, ...extraCategories];
+        };
+    });
 
     const handleCardClick = (cat) => {
         setSelectedCategory(cat.id);

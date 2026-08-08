@@ -19,7 +19,7 @@ import {
     FaVolumeMute,
     FaFilter
 } from 'react-icons/fa';
-import useQueueStore, { SERVICE_CATEGORIES } from '../store/queueStore';
+import useQueueStore from '../store/queueStore';
 
 function AdminPanel() {
     const [selectedCounter, setSelectedCounter] = useState(1);
@@ -140,25 +140,36 @@ function AdminPanel() {
         return `${Math.round(seconds / 3600)}h`;
     };
 
-    const knownKeywords = ['contracting', 'pr', 'technical', 'admin'];
+    // Generate all categories/filters dynamically from database counters
+    const allCategories = (counters || []).map((c) => {
+        const low = (c.name || '').toLowerCase();
+        let prefix = (c.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase();
+        let icon = '🏛️';
 
-    // Dynamically include any new division counters added from Admin panel
-    const extraCategories = (counters || [])
-        .filter((c) => {
-            const low = (c.name || '').toLowerCase();
-            return !knownKeywords.some((k) => low.includes(k));
-        })
-        .map((c) => ({
+        if (low.includes('contracting') || low.includes('con')) {
+            icon = '📄';
+            prefix = 'CON';
+        } else if (low.includes('pr')) {
+            icon = '📋';
+            prefix = 'PR';
+        } else if (low.includes('technical') || low.includes('tec')) {
+            icon = '⚙️';
+            prefix = 'TEC';
+        } else if (low.includes('admin') || low.includes('adm')) {
+            icon = '🏢';
+            prefix = 'ADM';
+        }
+
+        return {
             id: `CTR-${c.id}`,
             counterId: c.id,
             counterName: c.name,
             name: c.name,
-            prefix: (c.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase(),
-            icon: '🏛️',
+            prefix: prefix,
+            icon: icon,
             desc: `Assigned Officer: ${c.staff || 'Duty Officer'}`,
-        }));
-
-    const allCategories = [...SERVICE_CATEGORIES, ...extraCategories];
+        };
+    });
 
     const filteredQueue = categoryFilter === 'ALL'
         ? queue

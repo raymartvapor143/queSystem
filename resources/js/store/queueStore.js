@@ -2,12 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import axios from 'axios';
 
-export const SERVICE_CATEGORIES = [
-    { id: 'CON', name: 'Contracting Division', prefix: 'CON', icon: '📄', desc: 'Contracts, Bidding & Sealed Submissions' },
-    { id: 'PR', name: 'PR Division', prefix: 'PR', icon: '📋', desc: 'Purchase Requisitions & Procurement Processing' },
-    { id: 'TEC', name: 'Technical Division', prefix: 'TEC', icon: '⚙️', desc: 'Technical Specifications & Product Inspection' },
-    { id: 'ADM', name: 'Admin Division', prefix: 'ADM', icon: '🏢', desc: 'Administrative Services & General Assistance' },
-];
+// Hardcoded SERVICE_CATEGORIES removed. Categories are now derived dynamically from database counters.
 
 const useQueueStore = create(
     persist(
@@ -95,20 +90,35 @@ const useQueueStore = create(
             },
 
             generateTicket: async (categoryId = 'GEN') => {
-                let category = SERVICE_CATEGORIES.find(c => c.id === categoryId);
-                if (!category && String(categoryId).startsWith('CTR-')) {
-                    const counterId = parseInt(String(categoryId).replace('CTR-', ''), 10);
-                    const foundCounter = get().counters.find(c => c.id === counterId);
-                    if (foundCounter) {
+                let category = null;
+                const counterId = String(categoryId).startsWith('CTR-')
+                    ? parseInt(String(categoryId).replace('CTR-', ''), 10)
+                    : parseInt(categoryId, 10);
+
+                const foundCounter = (get().counters || []).find(c => c.id === counterId);
+                if (foundCounter) {
+                    category = {
+                        id: `CTR-${foundCounter.id}`,
+                        name: foundCounter.name,
+                        prefix: (foundCounter.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase(),
+                    };
+                }
+
+                if (!category) {
+                    const firstCounter = (get().counters || [])[0];
+                    if (firstCounter) {
                         category = {
-                            id: categoryId,
-                            name: foundCounter.name,
-                            prefix: foundCounter.name.substring(0, 3).toUpperCase(),
+                            id: `CTR-${firstCounter.id}`,
+                            name: firstCounter.name,
+                            prefix: (firstCounter.name.replace(/[^A-Za-z0-9]/g, '').substring(0, 3) || 'CTR').toUpperCase(),
+                        };
+                    } else {
+                        category = {
+                            id: 'GEN',
+                            name: 'General Counter',
+                            prefix: 'GEN',
                         };
                     }
-                }
-                if (!category) {
-                    category = SERVICE_CATEGORIES[3];
                 }
                 const tempTicket = {
                     id: Date.now(),

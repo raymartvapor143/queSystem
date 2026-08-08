@@ -133,6 +133,36 @@ function QueueDisplay() {
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
 
+    // Ensure the video plays, overcoming browser muted autoplay restrictions on first user interaction
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const attemptPlay = () => {
+            if (video.paused) {
+                video.play()
+                    .then(() => setVideoPlaying(true))
+                    .catch(err => {
+                        console.log("Autoplay blocked, waiting for user interaction:", err);
+                    });
+            }
+        };
+
+        attemptPlay();
+
+        const handleInteraction = () => {
+            attemptPlay();
+        };
+
+        window.addEventListener('click', handleInteraction);
+        window.addEventListener('keydown', handleInteraction);
+
+        return () => {
+            window.removeEventListener('click', handleInteraction);
+            window.removeEventListener('keydown', handleInteraction);
+        };
+    }, []);
+
 
 
     // Sequential Audio & Voice Announcement Queue Processor
