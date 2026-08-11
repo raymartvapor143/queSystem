@@ -341,8 +341,8 @@ function QueueDisplay() {
             <header className="bg-slate-900/80 backdrop-blur-xl border-b border-blue-500/20 py-3.5 px-6 shadow-xl">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-3.5">
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30 border border-blue-300/30">
-                            <FaBuilding className="text-2xl text-white" />
+                        <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-lg shadow-blue-500/30 border border-blue-300/30 bg-slate-800">
+                            <img src="/pmo.jpeg" alt="PMO Logo" className="w-full h-full object-cover" />
                         </div>
                         <div>
                             <h1 className="text-2xl font-black text-white tracking-wide uppercase font-mono">
