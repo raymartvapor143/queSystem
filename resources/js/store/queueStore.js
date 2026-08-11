@@ -213,13 +213,13 @@ const useQueueStore = create(
                 return null;
             },
 
-            skipQueue: async () => {
+            skipQueue: async (counterId) => {
                 try {
-                    const res = await axios.post('/api/queue/skip');
+                    const res = await axios.post('/api/queue/skip', { counterId });
                     if (res.data) {
                         await get().fetchQueueState();
                         broadcastSync();
-                        return res.data.skippedTicket;
+                        return res.data;
                     }
                 } catch (err) {
                     console.warn('Skip API error:', err);

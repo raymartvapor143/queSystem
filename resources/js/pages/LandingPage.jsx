@@ -287,7 +287,7 @@ function LandingPage() {
                     </a>
                     <span className="text-white/20">•</span>
                     <a
-                        href="/admin"
+                        href="/admin-oppmo-goods"
                         className="text-blue-300 hover:text-white transition-colors flex items-center gap-2 font-medium text-xs"
                     >
                         <FaUserCog />

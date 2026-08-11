@@ -141,9 +141,12 @@ function QueueDisplay() {
         const attemptPlay = () => {
             if (video.paused) {
                 video.play()
-                    .then(() => setVideoPlaying(true))
+                    .then(() => {
+                        setVideoPlaying(true);
+                        setVideoError(false);
+                    })
                     .catch(err => {
-                        console.log("Autoplay blocked, waiting for user interaction:", err);
+                        console.log("Autoplay waiting for user interaction or error:", err);
                     });
             }
         };
@@ -464,8 +467,12 @@ function QueueDisplay() {
                             loop
                             muted={videoMuted}
                             playsInline
-                            onPlay={() => setVideoPlaying(true)}
+                            onPlay={() => {
+                                setVideoPlaying(true);
+                                setVideoError(false);
+                            }}
                             onPause={() => setVideoPlaying(false)}
+                            onLoadedData={() => setVideoError(false)}
                             onError={() => setVideoError(true)}
                             className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} rounded-2xl transition-all duration-300`}
                         >
@@ -475,8 +482,21 @@ function QueueDisplay() {
                         {videoError && (
                             <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center">
                                 <FaFilm className="text-5xl text-blue-500/40 mb-3" />
-                                <p className="text-xl font-bold text-white">Video Unavailable</p>
-                                <p className="text-blue-300 text-xs mt-1">Please ensure public/video/video.mp4 exists.</p>
+                                <p className="text-xl font-bold text-white">Video Autoplay Blocked or Loading</p>
+                                <p className="text-blue-300 text-xs mt-1">Click the button below to start playing video.</p>
+                                <button
+                                    onClick={() => {
+                                        if (videoRef.current) {
+                                            videoRef.current.play().then(() => {
+                                                setVideoError(false);
+                                                setVideoPlaying(true);
+                                            }).catch(() => {});
+                                        }
+                                    }}
+                                    className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-xs transition-colors shadow-lg shadow-blue-500/30"
+                                >
+                                    Play Video
+                                </button>
                             </div>
                         )}
                     </div>

@@ -14,7 +14,7 @@ function App() {
                 <Routes>
                     <Route path="/" element={<LandingPage />} />
                     <Route path="/display" element={<QueueDisplay />} />
-                    <Route path="/admin" element={<AdminPanel />} />
+                    <Route path="/admin-oppmo-goods" element={<AdminPanel />} />
                 </Routes>
             </div>
         </ThemeProvider>

@@ -17,7 +17,8 @@ import {
     FaTag,
     FaVolumeUp,
     FaVolumeMute,
-    FaFilter
+    FaFilter,
+    FaSpinner
 } from 'react-icons/fa';
 import useQueueStore from '../store/queueStore';
 
@@ -27,6 +28,9 @@ function AdminPanel() {
     const [staffName, setStaffName] = useState('');
     const [counterName, setCounterName] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('ALL');
+
+    // Loading states for actions
+    const [loadingActions, setLoadingActions] = useState({});
 
     // Multi-select batch call state
     const [selectedTicketIds, setSelectedTicketIds] = useState([]);
@@ -66,8 +70,18 @@ function AdminPanel() {
         return () => clearInterval(syncInterval);
     }, [fetchQueueState]);
 
+    // Helper to wrap async button handlers with a loading indicator state
+    const runWithLoading = async (key, actionFn) => {
+        setLoadingActions((prev) => ({ ...prev, [key]: true }));
+        try {
+            await actionFn();
+        } finally {
+            setLoadingActions((prev) => ({ ...prev, [key]: false }));
+        }
+    };
+
     const handleNextQueue = () => {
-        nextQueue(selectedCounter);
+        runWithLoading(`next-${selectedCounter}`, () => nextQueue(selectedCounter));
     };
 
     const toggleSelectTicket = (id) => {
@@ -86,8 +100,10 @@ function AdminPanel() {
 
     const handleCallBatch = () => {
         if (selectedTicketIds.length > 0) {
-            callBatchTickets(selectedTicketIds, selectedCounter);
-            setSelectedTicketIds([]);
+            runWithLoading('callBatch', async () => {
+                await callBatchTickets(selectedTicketIds, selectedCounter);
+                setSelectedTicketIds([]);
+            });
         }
     };
 
@@ -99,10 +115,12 @@ function AdminPanel() {
 
     const handleSaveCounter = () => {
         if (editingCounter && staffName.trim()) {
-            updateCounter(editingCounter, staffName.trim(), counterName.trim() || undefined);
-            setEditingCounter(null);
-            setStaffName('');
-            setCounterName('');
+            runWithLoading(`save-${editingCounter}`, async () => {
+                await updateCounter(editingCounter, staffName.trim(), counterName.trim() || undefined);
+                setEditingCounter(null);
+                setStaffName('');
+                setCounterName('');
+            });
         }
     };
 
@@ -114,22 +132,24 @@ function AdminPanel() {
 
     const handleCreateCounter = () => {
         if (newCounterName.trim() && newCounterStaff.trim()) {
-            addCounter(newCounterName.trim(), newCounterStaff.trim());
-            setNewCounterName('');
-            setNewCounterStaff('');
-            setShowAddCounter(false);
+            runWithLoading('createCounter', async () => {
+                await addCounter(newCounterName.trim(), newCounterStaff.trim());
+                setNewCounterName('');
+                setNewCounterStaff('');
+                setShowAddCounter(false);
+            });
         }
     };
 
     const handleRemoveCounter = (id, name) => {
         if (window.confirm(`Are you sure you want to remove ${name}?`)) {
-            removeCounter(id);
+            runWithLoading(`remove-${id}`, () => removeCounter(id));
         }
     };
 
     const handleResetQueue = () => {
         if (window.confirm('Are you sure you want to reset the entire queue? This action cannot be undone.')) {
-            resetQueue();
+            runWithLoading('resetQueue', () => resetQueue());
         }
     };
 
@@ -240,7 +260,7 @@ function AdminPanel() {
                             </span>
                         </div>
 
-                        <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                        <div className="space-y-4 max-h-[650px] overflow-y-auto pr-1">
                             <AnimatePresence mode="popLayout">
                                 {Object.values(
                                     (servingQueues || []).reduce((acc, ticket) => {
@@ -316,30 +336,57 @@ function AdminPanel() {
                                             </div>
 
                                             {/* Per-Station Action Buttons */}
-                                            <div className="grid grid-cols-3 gap-1.5 border-t border-white/15 pt-2.5 mt-2">
+                                            <div className="grid grid-cols-4 gap-1.5 border-t border-white/15 pt-2.5 mt-2">
                                                 <button
-                                                    onClick={() => recallQueue(group.counterId)}
-                                                    className="bg-amber-500/80 hover:bg-amber-500 text-white font-bold py-1.5 px-2 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
+                                                    onClick={() => runWithLoading(`recall-${group.counterId}`, () => recallQueue(group.counterId))}
+                                                    disabled={loadingActions[`recall-${group.counterId}`]}
+                                                    className="bg-amber-500/80 hover:bg-amber-500 disabled:opacity-50 text-white font-bold py-1.5 px-1.5 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
                                                     title="Recall voice announcement"
                                                 >
-                                                    <FaRedo className="text-[10px]" />
+                                                    {loadingActions[`recall-${group.counterId}`] ? (
+                                                        <FaSpinner className="animate-spin text-[10px]" />
+                                                    ) : (
+                                                        <FaRedo className="text-[10px]" />
+                                                    )}
                                                     <span>Recall</span>
                                                 </button>
                                                 <button
-                                                    onClick={() => completeQueue(group.counterId)}
-                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-2 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
+                                                    onClick={() => runWithLoading(`skip-${group.counterId}`, () => skipQueue(group.counterId))}
+                                                    disabled={loadingActions[`skip-${group.counterId}`]}
+                                                    className="bg-rose-600/90 hover:bg-rose-600 disabled:opacity-50 text-white font-bold py-1.5 px-1.5 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
+                                                    title="Skip ticket(s) for this station"
+                                                >
+                                                    {loadingActions[`skip-${group.counterId}`] ? (
+                                                        <FaSpinner className="animate-spin text-[10px]" />
+                                                    ) : (
+                                                        <FaForward className="text-[10px]" />
+                                                    )}
+                                                    <span>Skip</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => runWithLoading(`complete-${group.counterId}`, () => completeQueue(group.counterId))}
+                                                    disabled={loadingActions[`complete-${group.counterId}`]}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-1.5 px-1.5 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
                                                     title="Mark all tickets in batch completed"
                                                 >
-                                                    <FaCheck className="text-[10px]" />
+                                                    {loadingActions[`complete-${group.counterId}`] ? (
+                                                        <FaSpinner className="animate-spin text-[10px]" />
+                                                    ) : (
+                                                        <FaCheck className="text-[10px]" />
+                                                    )}
                                                     <span>Done</span>
                                                 </button>
                                                 <button
-                                                    onClick={() => nextQueue(group.counterId)}
-                                                    disabled={queue.length === 0}
-                                                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-gray-500 text-white font-bold py-1.5 px-2 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
+                                                    onClick={() => runWithLoading(`next-${group.counterId}`, () => nextQueue(group.counterId))}
+                                                    disabled={queue.length === 0 || loadingActions[`next-${group.counterId}`]}
+                                                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-gray-500 text-white font-bold py-1.5 px-1.5 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-all"
                                                     title="Call next visitor for this station"
                                                 >
-                                                    <FaArrowRight className="text-[10px]" />
+                                                    {loadingActions[`next-${group.counterId}`] ? (
+                                                        <FaSpinner className="animate-spin text-[10px]" />
+                                                    ) : (
+                                                        <FaArrowRight className="text-[10px]" />
+                                                    )}
                                                     <span>Next</span>
                                                 </button>
                                             </div>
@@ -397,9 +444,14 @@ function AdminPanel() {
                             </div>
                             <button
                                 onClick={handleCallBatch}
-                                className="bg-white text-emerald-900 font-extrabold text-xs px-4 py-2 rounded-xl hover:bg-emerald-100 transition-all shadow-md flex items-center gap-1.5"
+                                disabled={loadingActions['callBatch']}
+                                className="bg-white text-emerald-900 font-extrabold text-xs px-4 py-2 rounded-xl hover:bg-emerald-100 disabled:opacity-50 transition-all shadow-md flex items-center gap-1.5"
                             >
-                                <FaArrowRight />
+                                {loadingActions['callBatch'] ? (
+                                    <FaSpinner className="animate-spin" />
+                                ) : (
+                                    <FaArrowRight />
+                                )}
                                 <span>Call Selected ({selectedTicketIds.length})</span>
                             </button>
                         </motion.div>
@@ -585,9 +637,11 @@ function AdminPanel() {
                                 />
                                 <button
                                     onClick={handleCreateCounter}
-                                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl text-xs transition-colors shadow-lg"
+                                    disabled={loadingActions['createCounter']}
+                                    className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition-colors shadow-lg flex items-center justify-center gap-2"
                                 >
-                                    Create Division Counter
+                                    {loadingActions['createCounter'] && <FaSpinner className="animate-spin text-xs" />}
+                                    <span>Create Division Counter</span>
                                 </button>
                             </div>
                         )}
@@ -621,9 +675,11 @@ function AdminPanel() {
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={handleSaveCounter}
-                                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors"
+                                                    disabled={loadingActions[`save-${counter.id}`]}
+                                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5"
                                                 >
-                                                    Save Changes
+                                                    {loadingActions[`save-${counter.id}`] && <FaSpinner className="animate-spin text-xs" />}
+                                                    <span>Save Changes</span>
                                                 </button>
                                                 <button
                                                     onClick={handleCancelEdit}
@@ -653,10 +709,15 @@ function AdminPanel() {
                                                 {counters.length > 1 && (
                                                     <button
                                                         onClick={() => handleRemoveCounter(counter.id, counter.name)}
-                                                        className="bg-red-600/80 hover:bg-red-600 text-white font-medium py-1.5 px-2.5 rounded-lg text-xs transition-colors"
+                                                        disabled={loadingActions[`remove-${counter.id}`]}
+                                                        className="bg-red-600/80 hover:bg-red-600 disabled:opacity-50 text-white font-medium py-1.5 px-2.5 rounded-lg text-xs transition-colors flex items-center gap-1"
                                                         title="Delete Station"
                                                     >
-                                                        <FaTrash className="text-xs" />
+                                                        {loadingActions[`remove-${counter.id}`] ? (
+                                                            <FaSpinner className="animate-spin text-xs" />
+                                                        ) : (
+                                                            <FaTrash className="text-xs" />
+                                                        )}
                                                     </button>
                                                 )}
                                             </div>

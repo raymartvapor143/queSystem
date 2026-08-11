@@ -361,18 +361,40 @@ class QueueController extends Controller
 
     public function skip(Request $request): JsonResponse
     {
+        $counterId = $request->input('counterId');
+
+        if ($counterId) {
+            // Skip active serving tickets for the given counter
+            $servingTickets = Ticket::where('status', 'serving')
+                ->where('counter_id', $counterId)
+                ->get();
+
+            if ($servingTickets->isNotEmpty()) {
+                Ticket::where('status', 'serving')
+                    ->where('counter_id', $counterId)
+                    ->update([
+                        'status' => 'skipped',
+                    ]);
+
+                Cache::forget('queue_stats_counts');
+                return response()->json(['message' => 'Skipped serving ticket(s) for counter']);
+            }
+        }
+
+        // Fallback: skip the oldest pending ticket in queue
         $nextTicket = Ticket::where('status', 'pending')
             ->orderBy('id', 'asc')
             ->first();
 
         if (!$nextTicket) {
-            return response()->json(['error' => 'No tickets in queue'], 400);
+            return response()->json(['error' => 'No tickets to skip'], 400);
         }
 
         $nextTicket->update([
             'status' => 'skipped',
         ]);
 
+        Cache::forget('queue_stats_counts');
         return response()->json(['skippedTicket' => $this->formatTicket($nextTicket)]);
     }
 
