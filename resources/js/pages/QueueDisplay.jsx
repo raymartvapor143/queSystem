@@ -349,7 +349,7 @@ function QueueDisplay() {
                         </div>
                         <div>
                             <h1 className="text-2xl font-black text-white tracking-wide uppercase font-mono">
-                                Office of the Provincial Procurement Management Officer
+                                OPPMO
                             </h1>
                             <p className="text-blue-300 text-xs font-semibold tracking-wider">
                                 Public Queue & Citizen's Information Display
