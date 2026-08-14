@@ -102,11 +102,12 @@ function QueueDisplay() {
     const [activeCenterTab, setActiveCenterTab] = useState('video'); // 'video' | 'org' | 'charter'
     const [isPlaying, setIsPlaying] = useState(true);
 
-    const [videoFit, setVideoFit] = useState('cover'); // 'cover' | 'contain'
+    const [videoFit, setVideoFit] = useState('contain'); // 'contain' | 'cover'
     const [videoMuted, setVideoMuted] = useState(true);
     const [videoPlaying, setVideoPlaying] = useState(true);
     const [videoError, setVideoError] = useState(false);
     const videoRef = useRef(null);
+    const isManuallyPausedRef = useRef(false);
 
     const fetchQueueState = useQueueStore((state) => state.fetchQueueState);
     const queue = useQueueStore((state) => state.queue);
@@ -139,7 +140,7 @@ function QueueDisplay() {
         if (!video) return;
 
         const attemptPlay = () => {
-            if (video.paused) {
+            if (video.paused && !isManuallyPausedRef.current) {
                 video.play()
                     .then(() => {
                         setVideoPlaying(true);
@@ -165,6 +166,23 @@ function QueueDisplay() {
             window.removeEventListener('keydown', handleInteraction);
         };
     }, []);
+
+    // Watchdog to auto-recover video playback if browser throttles or freezes video stream
+    useEffect(() => {
+        const checkPlayback = setInterval(() => {
+            const video = videoRef.current;
+            if (video && video.paused && !isManuallyPausedRef.current && !videoError) {
+                video.play()
+                    .then(() => {
+                        setVideoPlaying(true);
+                        setVideoError(false);
+                    })
+                    .catch(() => {});
+            }
+        }, 2500);
+
+        return () => clearInterval(checkPlayback);
+    }, [videoError]);
 
 
 
@@ -416,9 +434,13 @@ function QueueDisplay() {
                                         if (videoPlaying) {
                                             videoRef.current.pause();
                                             setVideoPlaying(false);
+                                            isManuallyPausedRef.current = true;
                                         } else {
-                                            videoRef.current.play();
-                                            setVideoPlaying(true);
+                                            isManuallyPausedRef.current = false;
+                                            videoRef.current.play().then(() => {
+                                                setVideoPlaying(true);
+                                                setVideoError(false);
+                                            }).catch(() => {});
                                         }
                                     }
                                 }}
@@ -452,7 +474,7 @@ function QueueDisplay() {
                                 className="text-blue-300 hover:text-white text-xs font-mono font-bold px-2 py-0.5 rounded transition-all"
                                 title="Toggle Video Aspect Fit / Cover"
                             >
-                                {videoFit === 'cover' ? 'Fit Screen' : 'Fill Container'}
+                                {videoFit === 'contain' ? 'Fit Screen (Active)' : 'Fill Container'}
                             </button>
                         </div>
                     </div>
@@ -471,10 +493,43 @@ function QueueDisplay() {
                                 setVideoPlaying(true);
                                 setVideoError(false);
                             }}
-                            onPause={() => setVideoPlaying(false)}
-                            onLoadedData={() => setVideoError(false)}
+                            onPause={() => {
+                                if (!isManuallyPausedRef.current) {
+                                    setTimeout(() => {
+                                        if (videoRef.current && videoRef.current.paused && !isManuallyPausedRef.current) {
+                                            videoRef.current.play().catch(() => {});
+                                        }
+                                    }, 300);
+                                } else {
+                                    setVideoPlaying(false);
+                                }
+                            }}
+                            onWaiting={() => {
+                                if (videoRef.current && !isManuallyPausedRef.current) {
+                                    videoRef.current.play().catch(() => {});
+                                }
+                            }}
+                            onStalled={() => {
+                                if (videoRef.current && !isManuallyPausedRef.current) {
+                                    videoRef.current.play().catch(() => {});
+                                }
+                            }}
+                            onEnded={() => {
+                                if (videoRef.current) {
+                                    videoRef.current.currentTime = 0;
+                                    if (!isManuallyPausedRef.current) {
+                                        videoRef.current.play().catch(() => {});
+                                    }
+                                }
+                            }}
+                            onLoadedData={() => {
+                                setVideoError(false);
+                                if (videoRef.current && videoRef.current.paused && !isManuallyPausedRef.current) {
+                                    videoRef.current.play().catch(() => {});
+                                }
+                            }}
                             onError={() => setVideoError(true)}
-                            className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} rounded-2xl transition-all duration-300`}
+                            className={`w-full h-full ${videoFit === 'contain' ? 'object-contain' : 'object-cover'} rounded-2xl transition-all duration-300`}
                         >
                             Your browser does not support the video tag.
                         </video>
@@ -487,6 +542,7 @@ function QueueDisplay() {
                                 <button
                                     onClick={() => {
                                         if (videoRef.current) {
+                                            isManuallyPausedRef.current = false;
                                             videoRef.current.play().then(() => {
                                                 setVideoError(false);
                                                 setVideoPlaying(true);
